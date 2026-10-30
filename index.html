@@ -12,6 +12,23 @@
 <!-- CSS kustom -->
 <link rel="stylesheet" href="style.css"/>
 
+<!-- Animasi peringatan Day 7 -->
+<style>
+@keyframes d7-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes d7-pop { 0% { opacity: 0; transform: scale(.6) translateY(24px); } 70% { transform: scale(1.04); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes d7-ring { 0% { transform: scale(.8); opacity: .7; } 100% { transform: scale(2.4); opacity: 0; } }
+@keyframes d7-shake { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(-12deg); } 40% { transform: rotate(12deg); } 60% { transform: rotate(-7deg); } 80% { transform: rotate(7deg); } }
+@keyframes d7-glow { 0%, 100% { box-shadow: 0 0 24px rgba(245,158,11,.25); } 50% { box-shadow: 0 0 52px rgba(245,158,11,.6); } }
+#day7-overlay { display: none; }
+#day7-overlay.is-open { display: flex; animation: d7-fade .3s ease-out; }
+#day7-card { animation: d7-pop .5s cubic-bezier(.2,.9,.3,1.2) both, d7-glow 2s ease-in-out .5s infinite; }
+.d7-ring { animation: d7-ring 1.8s ease-out infinite; }
+.d7-icon { animation: d7-shake 1.6s ease-in-out .6s infinite; }
+@media (prefers-reduced-motion: reduce) {
+  #day7-overlay.is-open, #day7-card, .d7-ring, .d7-icon { animation: none; }
+}
+</style>
+
 <!-- MQTT client -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
 </head>
@@ -243,5 +260,80 @@
 
 <!-- JavaScript utama (harus dimuat setelah Paho MQTT) -->
 <script src="app.js"></script>
+
+<!-- BEGIN: Peringatan Day 7 (menutupi layar, hanya bisa ditutup dengan tombol Close) -->
+<div id="day7-overlay" class="fixed inset-0 z-[100] items-center justify-center p-5 bg-black/75 backdrop-blur-sm" role="alertdialog" aria-modal="true" aria-labelledby="day7-title" aria-describedby="day7-desc" aria-hidden="true">
+<div id="day7-card" class="relative w-full max-w-sm rounded-3xl border border-amber-500/50 bg-[#0d1426] p-6 text-center">
+<div class="relative mx-auto mb-4 flex h-20 w-20 items-center justify-center">
+<span class="d7-ring absolute inset-0 rounded-full bg-amber-500/40"></span>
+<span class="d7-ring absolute inset-0 rounded-full bg-amber-500/40" style="animation-delay:.9s"></span>
+<div class="d7-icon relative flex h-20 w-20 items-center justify-center rounded-full border border-amber-400/60 bg-amber-950/90 text-amber-300">
+<svg class="h-10 w-10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+<line x1="12" x2="12" y1="9" y2="13"></line>
+<line x1="12" x2="12.01" y1="17" y2="17"></line>
+</svg>
+</div>
+</div>
+<p class="font-mono text-xs font-bold tracking-widest text-amber-400">DAY - 7</p>
+<h2 id="day7-title" class="mt-1 text-xl font-extrabold text-white">Peringatan Hari ke-7</h2>
+<p id="day7-desc" class="mt-2 text-sm leading-relaxed text-slate-300">Siklus pengasinan telur sudah mencapai hari ke-7. Segera periksa kondisi telur dan kepekatan larutan garam.</p>
+<button id="day7-close" type="button" class="mt-5 w-full rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 py-2.5 text-sm font-bold text-slate-900 transition active:scale-95 focus:outline-none focus:ring-2 focus:ring-amber-300">Close</button>
+</div>
+</div>
+<!-- END: Peringatan Day 7 -->
+
+<script>
+(function () {
+  var TARGET_DAY = 7;                    // ubah angka ini jika ingin hari lain
+  var KEY = 'day7-alert-closed';
+  var overlay = document.getElementById('day7-overlay');
+  var closeBtn = document.getElementById('day7-close');
+  var badge = document.getElementById('day-badge');
+  if (!overlay || !closeBtn || !badge) return;
+
+  function getDay() {
+    var m = (badge.textContent || '').match(/\d+/);
+    return m ? parseInt(m[0], 10) : null;
+  }
+  function isOpen() { return overlay.classList.contains('is-open'); }
+  function wasClosed() { try { return sessionStorage.getItem(KEY) === '1'; } catch (e) { return false; } }
+
+  function openAlert() {
+    if (isOpen()) return;
+    overlay.classList.add('is-open');
+    overlay.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) {}
+    closeBtn.focus();
+  }
+  function closeAlert() {
+    overlay.classList.remove('is-open');
+    overlay.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+    try { sessionStorage.setItem(KEY, '1'); } catch (e) {}
+  }
+  function check() {
+    var d = getDay();
+    if (d !== TARGET_DAY) {
+      try { sessionStorage.removeItem(KEY); } catch (e) {}
+      return;
+    }
+    if (!wasClosed()) openAlert();
+  }
+
+  closeBtn.addEventListener('click', closeAlert);
+  // Hanya tombol Close yang boleh menutup: blokir Esc dan Tab keluar dari dialog
+  document.addEventListener('keydown', function (e) {
+    if (!isOpen()) return;
+    if (e.key === 'Escape' || e.key === 'Tab') e.preventDefault();
+  });
+
+  new MutationObserver(check).observe(badge, { childList: true, characterData: true, subtree: true });
+  window.addEventListener('load', function () { setTimeout(check, 300); });
+
+  window.showDay7Alert = openAlert;      // untuk uji coba lewat Console
+})();
+</script>
 </body>
 </html>
