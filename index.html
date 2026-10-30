@@ -27,6 +27,17 @@
 @media (prefers-reduced-motion: reduce) {
   #day7-overlay.is-open, #day7-card, .d7-ring, .d7-icon { animation: none; }
 }
+
+/* Peringatan ketinggian air rendah */
+@keyframes lv-glow { 0%, 100% { box-shadow: 0 0 24px rgba(244,63,94,.25); } 50% { box-shadow: 0 0 52px rgba(244,63,94,.6); } }
+@keyframes lv-drop { 0%, 100% { transform: translateY(-3px); } 50% { transform: translateY(4px); } }
+#lvl-overlay { display: none; }
+#lvl-overlay.is-open { display: flex; animation: d7-fade .3s ease-out; }
+#lvl-card { animation: d7-pop .5s cubic-bezier(.2,.9,.3,1.2) both, lv-glow 1.6s ease-in-out .5s infinite; }
+.lv-icon { animation: lv-drop 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  #lvl-overlay.is-open, #lvl-card, .lv-icon { animation: none; }
+}
 </style>
 
 <!-- MQTT client -->
@@ -283,6 +294,27 @@
 </div>
 <!-- END: Peringatan Day 7 -->
 
+<!-- BEGIN: Peringatan ketinggian air rendah (hanya bisa ditutup dengan tombol Close) -->
+<div id="lvl-overlay" class="fixed inset-0 z-[100] items-center justify-center p-5 bg-black/75 backdrop-blur-sm" role="alertdialog" aria-modal="true" aria-labelledby="lvl-title" aria-describedby="lvl-desc" aria-hidden="true">
+<div id="lvl-card" class="relative w-full max-w-sm rounded-3xl border border-rose-500/50 bg-[#0d1426] p-6 text-center">
+<div class="relative mx-auto mb-4 flex h-20 w-20 items-center justify-center">
+<span class="d7-ring absolute inset-0 rounded-full bg-rose-500/40"></span>
+<span class="d7-ring absolute inset-0 rounded-full bg-rose-500/40" style="animation-delay:.9s"></span>
+<div class="relative flex h-20 w-20 items-center justify-center rounded-full border border-rose-400/60 bg-rose-950/90 text-rose-300">
+<svg class="lv-icon h-10 w-10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+<path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+</svg>
+</div>
+</div>
+<p class="font-mono text-xs font-bold tracking-widest text-rose-400">KETINGGIAN AIR RENDAH</p>
+<h2 id="lvl-title" class="mt-1 text-xl font-extrabold text-white">Air Hampir Habis</h2>
+<p id="lvl-desc" class="mt-2 text-sm leading-relaxed text-slate-300">Ketinggian larutan garam sudah rendah. Segera tambahkan air agar telur tetap terendam.</p>
+<p class="mt-3 text-xs text-slate-400">Saat ini: <span id="lvl-now" class="font-mono font-bold text-rose-300">—</span></p>
+<button id="lvl-close" type="button" class="mt-5 w-full rounded-xl bg-gradient-to-r from-rose-500 to-orange-500 py-2.5 text-sm font-bold text-slate-900 transition active:scale-95 focus:outline-none focus:ring-2 focus:ring-rose-300">Close</button>
+</div>
+</div>
+<!-- END: Peringatan ketinggian air rendah -->
+
 <script>
 (function () {
   var TARGET_DAY = 7;                    // ubah angka ini jika ingin hari lain
@@ -333,6 +365,80 @@
   window.addEventListener('load', function () { setTimeout(check, 300); });
 
   window.showDay7Alert = openAlert;      // untuk uji coba lewat Console
+})();
+</script>
+
+<script>
+(function () {
+  var LOW_PERCENT = 20;     // peringatan muncul jika isi gauge di bawah angka ini (%)
+  var RESET_PERCENT = 25;   // peringatan baru bisa muncul lagi setelah level naik ke atas angka ini (%)
+
+  var overlay = document.getElementById('lvl-overlay');
+  var closeBtn = document.getElementById('lvl-close');
+  var nowEl = document.getElementById('lvl-now');
+  var fill = document.getElementById('gauge-fill');
+  var vLevel = document.getElementById('v-level');
+  var uLevel = document.getElementById('u-level');
+  if (!overlay || !closeBtn || !fill || !vLevel) return;
+
+  var armed = true;
+
+  function getPercent() {
+    var h = parseFloat(fill.style.height);
+    return isNaN(h) ? null : h;
+  }
+  function hasData() { return /\d/.test(vLevel.textContent || ''); }
+  function isOpen() { return overlay.classList.contains('is-open'); }
+  function day7Open() {
+    var d = document.getElementById('day7-overlay');
+    return !!(d && d.classList.contains('is-open'));
+  }
+  function updateText() {
+    var p = getPercent();
+    var txt = (vLevel.textContent || '').trim() + ' ' + (uLevel ? (uLevel.textContent || '').trim() : '');
+    if (p !== null) txt += ' (' + Math.round(p) + '%)';
+    nowEl.textContent = txt.trim() || '—';
+  }
+
+  function openAlert() {
+    if (isOpen()) return;
+    updateText();
+    overlay.classList.add('is-open');
+    overlay.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    try { if (navigator.vibrate) navigator.vibrate([300, 150, 300]); } catch (e) {}
+    closeBtn.focus();
+  }
+  function closeAlert() {
+    overlay.classList.remove('is-open');
+    overlay.setAttribute('aria-hidden', 'true');
+    if (!day7Open()) document.body.style.overflow = '';
+    armed = false;   // tidak muncul lagi sampai level naik melewati RESET_PERCENT
+  }
+  function check() {
+    if (!hasData()) return;            // tunggu data asli dari perangkat
+    var p = getPercent();
+    if (p === null) return;
+    if (p >= RESET_PERCENT) armed = true;
+    if (isOpen()) { updateText(); return; }
+    if (p < LOW_PERCENT && armed && !day7Open()) openAlert();
+  }
+
+  closeBtn.addEventListener('click', closeAlert);
+  document.addEventListener('keydown', function (e) {
+    if (!isOpen()) return;
+    if (e.key === 'Escape' || e.key === 'Tab') e.preventDefault();
+  });
+
+  new MutationObserver(check).observe(fill, { attributes: true, attributeFilter: ['style'] });
+  new MutationObserver(check).observe(vLevel, { childList: true, characterData: true, subtree: true });
+
+  // Jika peringatan Day 7 sedang tampil, tunggu sampai ditutup baru cek lagi
+  var d7Close = document.getElementById('day7-close');
+  if (d7Close) d7Close.addEventListener('click', function () { setTimeout(check, 150); });
+
+  window.addEventListener('load', function () { setTimeout(check, 500); });
+  window.showLevelAlert = openAlert;     // untuk uji coba lewat Console
 })();
 </script>
 </body>
